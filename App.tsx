@@ -1,130 +1,221 @@
-/**
- * Sample React Native App
- * https://github.com/facebook/react-native
- *
- * @format
- */
+// App.tsx - LifeAssist Glass Gemini APIテスト
 
-import React from 'react';
-import type {PropsWithChildren} from 'react';
+import React, { useState, useEffect } from 'react';
 import {
+  SafeAreaView,
   ScrollView,
-  StatusBar,
-  StyleSheet,
   Text,
-  useColorScheme,
+  TouchableOpacity,
   View,
+  StyleSheet,
+  TextInput,
+  Alert,
 } from 'react-native';
+import { GoogleGenAI } from '@google/genai';
+import { GEMINI_API_KEY } from '@env';
 
-import {
-  Colors,
-  DebugInstructions,
-  Header,
-  LearnMoreLinks,
-  ReloadInstructions,
-} from 'react-native/Libraries/NewAppScreen';
+// 環境変数からAPIキーを取得
+const ai = new GoogleGenAI({apiKey: GEMINI_API_KEY});
 
-type SectionProps = PropsWithChildren<{
-  title: string;
-}>;
+const App = () => {
+  const [message, setMessage] = useState('');
+  const [response, setResponse] = useState('');
+  const [loading, setLoading] = useState(false);
 
-function Section({children, title}: SectionProps): React.JSX.Element {
-  const isDarkMode = useColorScheme() === 'dark';
-  return (
-    <View style={styles.sectionContainer}>
-      <Text
-        style={[
-          styles.sectionTitle,
-          {
-            color: isDarkMode ? Colors.white : Colors.black,
-          },
-        ]}>
-        {title}
-      </Text>
-      <Text
-        style={[
-          styles.sectionDescription,
-          {
-            color: isDarkMode ? Colors.light : Colors.dark,
-          },
-        ]}>
-        {children}
-      </Text>
-    </View>
-  );
-}
+  // APIキーの設定確認
+  useEffect(() => {
+    if (!GEMINI_API_KEY) {
+      Alert.alert(
+        '設定エラー', 
+        'APIキーが設定されていません。.envファイルを確認してください。'
+      );
+    }
+  }, []);
 
-function App(): React.JSX.Element {
-  const isDarkMode = useColorScheme() === 'dark';
+  // Gemini APIにメッセージを送信
+  const sendToGemini = async () => {
+    if (!message.trim()) {
+      Alert.alert('エラー', 'メッセージを入力してください');
+      return;
+    }
 
-  const backgroundStyle = {
-    backgroundColor: isDarkMode ? Colors.darker : Colors.lighter,
+    setLoading(true);
+    try {
+      // 新しい@google/genai SDKを使用
+      const response = await ai.models.generateContent({
+        model: 'gemini-2.0-flash-001',
+        contents: message,
+      });
+      
+      setResponse(response.text);
+    } catch (error) {
+      console.error('API Error:', error);
+      Alert.alert('エラー', 'API呼び出しに失敗しました');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  /*
-   * To keep the template simple and small we're adding padding to prevent view
-   * from rendering under the System UI.
-   * For bigger apps the recommendation is to use `react-native-safe-area-context`:
-   * https://github.com/AppAndFlow/react-native-safe-area-context
-   *
-   * You can read more about it here:
-   * https://github.com/react-native-community/discussions-and-proposals/discussions/827
-   */
-  const safePadding = '5%';
+  // LifeAssist Glass用のテストプロンプト
+  const testLifeAssistPrompt = () => {
+    const prompt = `
+あなたは装着者の生活をサポートするAIアシスタントです。
+
+【現在時刻】: ${new Date().toLocaleString('ja-JP')}
+【状況】: ユーザーがスマートグラスのテストを行っています
+【目的】: システムが正常に動作しているか確認
+
+上記情報を基に、装着者に対する適切な挨拶とアドバイスを50文字以内で生成してください。
+    `;
+    
+    setMessage(prompt);
+  };
 
   return (
-    <View style={backgroundStyle}>
-      <StatusBar
-        barStyle={isDarkMode ? 'light-content' : 'dark-content'}
-        backgroundColor={backgroundStyle.backgroundColor}
-      />
-      <ScrollView
-        style={backgroundStyle}>
-        <View style={{paddingRight: safePadding}}>
-          <Header/>
-        </View>
-        <View
-          style={{
-            backgroundColor: isDarkMode ? Colors.black : Colors.white,
-            paddingHorizontal: safePadding,
-            paddingBottom: safePadding,
-          }}>
-          <Section title="Step One">
-            Edit <Text style={styles.highlight}>App.tsx</Text> to change this
-            screen and then come back to see your edits.
-          </Section>
-          <Section title="See Your Changes">
-            <ReloadInstructions />
-          </Section>
-          <Section title="Debug">
-            <DebugInstructions />
-          </Section>
-          <Section title="Learn More">
-            Read the docs to discover what to do next:
-          </Section>
-          <LearnMoreLinks />
+    <SafeAreaView style={styles.container}>
+      <ScrollView contentInsetAdjustmentBehavior="automatic">
+        <View style={styles.content}>
+          <Text style={styles.title}>LifeAssist Glass - Gemini APIテスト</Text>
+          
+          {/* API設定状況の表示 */}
+          <View style={styles.statusSection}>
+            <Text style={styles.statusLabel}>API設定状況:</Text>
+            <Text style={[styles.statusText, GEMINI_API_KEY ? styles.statusOk : styles.statusError]}>
+              {GEMINI_API_KEY ? `✓ APIキー設定済み (${GEMINI_API_KEY.substring(0, 8)}...)` : '✗ APIキー未設定'}
+            </Text>
+          </View>
+          
+          <View style={styles.section}>
+            <Text style={styles.label}>メッセージ:</Text>
+            <TextInput
+              style={styles.textInput}
+              multiline
+              value={message}
+              onChangeText={setMessage}
+              placeholder="Geminiに送信するメッセージを入力..."
+            />
+          </View>
+
+          <View style={styles.buttonContainer}>
+            <TouchableOpacity 
+              style={styles.button} 
+              onPress={sendToGemini}
+              disabled={loading}
+            >
+              <Text style={styles.buttonText}>
+                {loading ? '送信中...' : 'Geminiに送信'}
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={[styles.button, styles.testButton]} 
+              onPress={testLifeAssistPrompt}
+            >
+              <Text style={styles.buttonText}>
+                LifeAssistテスト
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {response ? (
+            <View style={styles.section}>
+              <Text style={styles.label}>Geminiの応答:</Text>
+              <View style={styles.responseContainer}>
+                <Text style={styles.responseText}>{response}</Text>
+              </View>
+            </View>
+          ) : null}
         </View>
       </ScrollView>
-    </View>
+    </SafeAreaView>
   );
-}
+};
 
 const styles = StyleSheet.create({
-  sectionContainer: {
-    marginTop: 32,
-    paddingHorizontal: 24,
+  container: {
+    flex: 1,
+    backgroundColor: '#f5f5f5',
   },
-  sectionTitle: {
+  content: {
+    margin: 20,
+  },
+  title: {
     fontSize: 24,
-    fontWeight: '600',
+    fontWeight: 'bold',
+    textAlign: 'center',
+    marginBottom: 30,
+    color: '#333',
   },
-  sectionDescription: {
-    marginTop: 8,
-    fontSize: 18,
-    fontWeight: '400',
+  section: {
+    marginBottom: 20,
   },
-  highlight: {
-    fontWeight: '700',
+  statusSection: {
+    marginBottom: 20,
+    padding: 10,
+    backgroundColor: '#f0f0f0',
+    borderRadius: 8,
+  },
+  statusLabel: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    marginBottom: 5,
+    color: '#333',
+  },
+  statusText: {
+    fontSize: 14,
+  },
+  statusOk: {
+    color: '#34C759',
+  },
+  statusError: {
+    color: '#FF3B30',
+  },
+  label: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginBottom: 10,
+    color: '#555',
+  },
+  textInput: {
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 8,
+    padding: 15,
+    minHeight: 120,
+    backgroundColor: 'white',
+    textAlignVertical: 'top',
+  },
+  buttonContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 20,
+  },
+  button: {
+    backgroundColor: '#007AFF',
+    padding: 15,
+    borderRadius: 8,
+    flex: 1,
+    marginHorizontal: 5,
+  },
+  testButton: {
+    backgroundColor: '#34C759',
+  },
+  buttonText: {
+    color: 'white',
+    textAlign: 'center',
+    fontWeight: 'bold',
+  },
+  responseContainer: {
+    backgroundColor: 'white',
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 8,
+    padding: 15,
+  },
+  responseText: {
+    fontSize: 16,
+    lineHeight: 24,
+    color: '#333',
   },
 });
 
