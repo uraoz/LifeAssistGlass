@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { GoogleGenAI } from '@google/genai';
 import { GEMINI_API_KEY } from '@env';
+import CameraScreen from './src/components/CameraScreen';
 
 // 環境変数からAPIキーを取得
 const ai = new GoogleGenAI({apiKey: GEMINI_API_KEY});
@@ -21,6 +22,7 @@ const App = () => {
   const [message, setMessage] = useState('');
   const [response, setResponse] = useState('');
   const [loading, setLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState<'text' | 'camera'>('text');
 
   // APIキーの設定確認
   useEffect(() => {
@@ -71,8 +73,13 @@ const App = () => {
     setMessage(prompt);
   };
 
-  return (
-    <SafeAreaView style={styles.container}>
+  const renderContent = () => {
+    if (activeTab === 'camera') {
+      return <CameraScreen />;
+    }
+    
+    // テキスト入力タブの内容（既存のUI）
+    return (
       <ScrollView contentInsetAdjustmentBehavior="automatic">
         <View style={styles.content}>
           <Text style={styles.title}>LifeAssist Glass - Gemini APIテスト</Text>
@@ -127,6 +134,34 @@ const App = () => {
           ) : null}
         </View>
       </ScrollView>
+    );
+  };
+
+  return (
+    <SafeAreaView style={styles.container}>
+      {/* タブナビゲーション */}
+      <View style={styles.tabContainer}>
+        <TouchableOpacity 
+          style={[styles.tab, activeTab === 'text' && styles.activeTab]}
+          onPress={() => setActiveTab('text')}
+        >
+          <Text style={[styles.tabText, activeTab === 'text' && styles.activeTabText]}>
+            テキスト入力
+          </Text>
+        </TouchableOpacity>
+        
+        <TouchableOpacity 
+          style={[styles.tab, activeTab === 'camera' && styles.activeTab]}
+          onPress={() => setActiveTab('camera')}
+        >
+          <Text style={[styles.tabText, activeTab === 'camera' && styles.activeTabText]}>
+            カメラ機能
+          </Text>
+        </TouchableOpacity>
+      </View>
+      
+      {/* コンテンツ表示 */}
+      {renderContent()}
     </SafeAreaView>
   );
 };
@@ -216,6 +251,28 @@ const styles = StyleSheet.create({
     fontSize: 16,
     lineHeight: 24,
     color: '#333',
+  },
+  tabContainer: {
+    flexDirection: 'row',
+    backgroundColor: '#f0f0f0',
+    borderBottomWidth: 1,
+    borderBottomColor: '#ddd',
+  },
+  tab: {
+    flex: 1,
+    paddingVertical: 15,
+    alignItems: 'center',
+  },
+  activeTab: {
+    backgroundColor: '#007AFF',
+  },
+  tabText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#666',
+  },
+  activeTabText: {
+    color: 'white',
   },
 });
 
