@@ -50,5 +50,9 @@
 	<false/>
 	<key>NSCameraUsageDescription</key>
 	<string>LifeAssist Glassが生活支援のためにカメラを使用します</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>LifeAssist Glassが撮影した画像を保存するためにフォトライブラリにアクセスします</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>LifeAssist Glassが音声フィードバックのためにマイクを使用します</string>
 </dict>
 </plist>
