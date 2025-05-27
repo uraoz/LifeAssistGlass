@@ -48,5 +48,7 @@
 	</array>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<false/>
+	<key>NSCameraUsageDescription</key>
+	<string>LifeAssist Glassが生活支援のためにカメラを使用します</string>
 </dict>
 </plist>
