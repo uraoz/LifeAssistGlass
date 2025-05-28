@@ -54,5 +54,9 @@
 	<string>LifeAssist Glassが撮影した画像を保存するためにフォトライブラリにアクセスします</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>LifeAssist Glassが音声フィードバックのためにマイクを使用します</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>LifeAssist Glassが現在地に基づいた生活支援のために位置情報を使用します</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>LifeAssist Glassが現在地に基づいた生活支援のために位置情報を使用します</string>
 </dict>
 </plist>

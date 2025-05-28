@@ -17,13 +17,18 @@ import {
   TakePhotoOptions,
 } from 'react-native-vision-camera';
 import ImageAnalysisService from '../services/ImageAnalysisService';
-import { AnalysisResult, LifeAssistContext } from '../types/camera';
+import LocationService from '../services/LocationService';
+import WeatherService from '../services/WeatherService';
+import { AnalysisResult, LifeAssistContext, LocationInfo, WeatherInfo } from '../types';
 
 const CameraScreen: React.FC = () => {
   const [capturedPhoto, setCapturedPhoto] = useState<PhotoFile | null>(null);
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
+  const [currentLocation, setCurrentLocation] = useState<LocationInfo | null>(null);
+  const [currentWeather, setCurrentWeather] = useState<WeatherInfo | null>(null);
+  const [loadingStage, setLoadingStage] = useState<string>('');
 
   const camera = useRef<Camera>(null);
   const device = useCameraDevice('back');
@@ -60,24 +65,107 @@ const CameraScreen: React.FC = () => {
     }
   };
 
-  // 画像解析実行
+  // 画像解析実行（位置情報・天気情報統合版）
   const analyzePhoto = async () => {
     if (!capturedPhoto) return;
 
     setIsAnalyzing(true);
-    // 現在時刻を正確に取得
-    const now = new Date();
-    console.log('現在時刻デバッグ:', now, now.toLocaleString('ja-JP'));
-    // LifeAssistコンテキストの生成
-    const context: LifeAssistContext = {
-      currentTime: new Date().toLocaleString('ja-JP'),
-      location: '東京都', // 後でGPS連携予定
-      weather: '晴れ', // 後で天気API連携予定
-    };
+    setLoadingStage('位置情報を取得中...');
+    
+    try {
+      // 1. 位置情報の取得
+      console.log('位置情報取得開始');
+      const location = await LocationService.getCurrentLocation();
+      setCurrentLocation(location);
+      
+      let weather: WeatherInfo | null = null;
+      
+      if (location) {
+        // 2. 天気情報の取得
+        setLoadingStage('天気情報を取得中...');
+        console.log('天気情報取得開始:', location);
+        weather = await WeatherService.getWeatherInfo(location);
+        setCurrentWeather(weather);
+      }
 
-    const result = await ImageAnalysisService.analyzeImageWithPhoto(capturedPhoto.path, context);
-    setAnalysisResult(result);
-    setIsAnalyzing(false);
+      // 3. LifeAssistコンテキストの生成
+      setLoadingStage('画像を解析中...');
+      
+      const context: LifeAssistContext = {
+        currentTime: new Date().toLocaleString('ja-JP', {
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+          timeZone: 'Asia/Tokyo'
+        }),
+        location: location,
+        weather: weather,
+      };
+
+      console.log('統合コンテキスト:', context);
+
+      // 4. 画像解析実行
+      const result = await ImageAnalysisService.analyzeImageWithPhoto(capturedPhoto.path, context);
+      setAnalysisResult(result);
+
+    } catch (error) {
+      console.error('統合解析エラー:', error);
+      Alert.alert('エラー', '位置情報または天気情報の取得に失敗しました');
+      
+      // フォールバック：基本情報のみで解析
+      const fallbackContext: LifeAssistContext = {
+        currentTime: new Date().toLocaleString('ja-JP'),
+      };
+      
+      const result = await ImageAnalysisService.analyzeImageWithPhoto(capturedPhoto.path, fallbackContext);
+      setAnalysisResult(result);
+    } finally {
+      setIsAnalyzing(false);
+      setLoadingStage('');
+    }
+  };
+
+  // 位置情報・天気情報統合テスト（画像なし）
+  const testAPIWithLocation = async () => {
+    setIsAnalyzing(true);
+    setLoadingStage('位置情報を取得中...');
+    
+    try {
+      // 位置情報取得
+      const location = await LocationService.getCurrentLocation();
+      setCurrentLocation(location);
+      
+      let weather: WeatherInfo | null = null;
+      
+      if (location) {
+        // 天気情報取得
+        setLoadingStage('天気情報を取得中...');
+        weather = await WeatherService.getWeatherInfo(location);
+        setCurrentWeather(weather);
+      }
+
+      // 統合コンテキストでテスト
+      setLoadingStage('AIアドバイスを生成中...');
+      
+      const context: LifeAssistContext = {
+        currentTime: new Date().toLocaleString('ja-JP'),
+        location: location,
+        weather: weather,
+      };
+
+      const result = await ImageAnalysisService.analyzeImage('', context);
+      setAnalysisResult(result);
+
+    } catch (error) {
+      console.error('統合テストエラー:', error);
+      Alert.alert('エラー', '位置情報または天気情報の取得に失敗しました');
+    } finally {
+      setIsAnalyzing(false);
+      setLoadingStage('');
+    }
   };
 
   // 新しい撮影
@@ -87,19 +175,19 @@ const CameraScreen: React.FC = () => {
     setShowPreview(false);
   };
 
-  // APIテスト（画像なし）
+  // 簡易APIテスト（画像なし・フォールバック用）
   const testAPI = async () => {
     setIsAnalyzing(true);
+    setLoadingStage('簡易テスト実行中...');
     
     const context: LifeAssistContext = {
       currentTime: new Date().toLocaleString('ja-JP'),
-      location: '東京都',
-      weather: '晴れ',
     };
 
     const result = await ImageAnalysisService.analyzeImage('', context);
     setAnalysisResult(result);
     setIsAnalyzing(false);
+    setLoadingStage('');
   };
 
   // 権限がない場合
@@ -110,8 +198,8 @@ const CameraScreen: React.FC = () => {
         <TouchableOpacity style={styles.button} onPress={requestPermission}>
           <Text style={styles.buttonText}>権限を許可</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={[styles.button, styles.testButton]} onPress={testAPI}>
-          <Text style={styles.buttonText}>APIテスト（権限なし）</Text>
+        <TouchableOpacity style={[styles.button, styles.testButton]} onPress={testAPIWithLocation}>
+          <Text style={styles.buttonText}>統合APIテスト</Text>
         </TouchableOpacity>
       </View>
     );
@@ -122,8 +210,8 @@ const CameraScreen: React.FC = () => {
     return (
       <View style={styles.container}>
         <Text style={styles.permissionText}>カメラデバイスが見つかりません</Text>
-        <TouchableOpacity style={[styles.button, styles.testButton]} onPress={testAPI}>
-          <Text style={styles.buttonText}>APIテスト（カメラなし）</Text>
+        <TouchableOpacity style={[styles.button, styles.testButton]} onPress={testAPIWithLocation}>
+          <Text style={styles.buttonText}>統合APIテスト</Text>
         </TouchableOpacity>
       </View>
     );
@@ -155,7 +243,37 @@ const CameraScreen: React.FC = () => {
           {isAnalyzing && (
             <View style={styles.loadingContainer}>
               <ActivityIndicator size="large" color="#007AFF" />
-              <Text style={styles.loadingText}>画像を解析しています...</Text>
+              <Text style={styles.loadingText}>
+                {loadingStage || '画像を解析しています...'}
+              </Text>
+            </View>
+          )}
+
+          {/* 位置情報・天気情報表示 */}
+          {(currentLocation || currentWeather) && (
+            <View style={styles.contextContainer}>
+              <Text style={styles.contextLabel}>📍 取得した情報:</Text>
+              
+              {currentLocation && (
+                <View style={styles.infoBox}>
+                  <Text style={styles.infoTitle}>位置情報</Text>
+                  <Text style={styles.infoText}>
+                    📍 {currentLocation.address || `${currentLocation.latitude.toFixed(4)}, ${currentLocation.longitude.toFixed(4)}`}
+                  </Text>
+                </View>
+              )}
+              
+              {currentWeather && (
+                <View style={styles.infoBox}>
+                  <Text style={styles.infoTitle}>天気情報</Text>
+                  <Text style={styles.infoText}>
+                    🌡️ {currentWeather.temperature}°C / {currentWeather.description}
+                  </Text>
+                  <Text style={styles.infoSubText}>
+                    💧 湿度: {currentWeather.humidity}% | 🌬️ 風速: {currentWeather.windSpeed}m/s
+                  </Text>
+                </View>
+              )}
             </View>
           )}
 
@@ -183,8 +301,8 @@ const CameraScreen: React.FC = () => {
           />
           
           <View style={styles.cameraControls}>
-            <TouchableOpacity style={styles.testAPIButton} onPress={testAPI}>
-              <Text style={styles.testAPIText}>API TEST</Text>
+            <TouchableOpacity style={styles.testAPIButton} onPress={testAPIWithLocation}>
+              <Text style={styles.testAPIText}>統合テスト</Text>
             </TouchableOpacity>
             
             <TouchableOpacity style={styles.captureButton} onPress={takePhoto}>
@@ -333,6 +451,40 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     color: 'white',
     margin: 20,
+  },
+  contextContainer: {
+    margin: 20,
+    marginTop: 10,
+  },
+  contextLabel: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginBottom: 10,
+    color: '#333',
+  },
+  infoBox: {
+    backgroundColor: '#f8f9fa',
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 8,
+    borderLeftWidth: 4,
+    borderLeftColor: '#007AFF',
+  },
+  infoTitle: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 4,
+  },
+  infoText: {
+    fontSize: 14,
+    color: '#555',
+    lineHeight: 20,
+  },
+  infoSubText: {
+    fontSize: 12,
+    color: '#777',
+    marginTop: 2,
   },
 });
 
