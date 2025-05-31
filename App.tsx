@@ -14,7 +14,7 @@ import {
 import { GoogleGenAI } from '@google/genai';
 import { GEMINI_API_KEY } from '@env';
 import CameraScreen from './src/components/CameraScreen';
-import GoogleAuthWebView from './src/components/GoogleAuthWebView';
+import GoogleAuthNative from './src/components/GoogleAuthNative';
 
 // 環境変数からAPIキーを取得
 const ai = new GoogleGenAI({apiKey: GEMINI_API_KEY});
@@ -92,7 +92,7 @@ const App = () => {
     
     if (activeTab === 'calendar') {
       return (
-        <GoogleAuthWebView 
+        <GoogleAuthNative 
           onAuthSuccess={handleCalendarAuthSuccess}
           onAuthError={handleCalendarAuthError}
         />

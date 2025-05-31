@@ -84,6 +84,11 @@ android {
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
         versionName "1.0"
+        
+        // react-native-app-auth用の設定（Google推奨形式に戻す）
+        manifestPlaceholders = [
+            appAuthRedirectScheme: "com.googleusercontent.apps.924836063580-i1feil94sl73ssb3ogjiuk8ebnpsekjt"
+        ]
     }
     signingConfigs {
         debug {

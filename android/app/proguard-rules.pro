@@ -8,3 +8,9 @@
 #   http://developer.android.com/guide/developing/tools/proguard.html
 
 # Add any project specific keep options here:
+
+# react-native-app-auth
+-keep class net.openid.appauth.** { *; }
+-dontwarn net.openid.appauth.**
+-keep class org.chromium.** { *; }
+-dontwarn org.chromium.**

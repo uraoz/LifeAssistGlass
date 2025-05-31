@@ -58,5 +58,18 @@
 	<string>LifeAssist Glassが現在地に基づいた生活支援のために位置情報を使用します</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
 	<string>LifeAssist Glassが現在地に基づいた生活支援のために位置情報を使用します</string>
+	
+	<!-- react-native-app-auth用のURL Scheme設定（Google推奨形式に戻す） -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.googleusercontent.apps.924836063580-i1feil94sl73ssb3ogjiuk8ebnpsekjt</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.googleusercontent.apps.924836063580-i1feil94sl73ssb3ogjiuk8ebnpsekjt</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>

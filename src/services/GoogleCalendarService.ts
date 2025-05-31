@@ -1,6 +1,5 @@
-// GoogleCalendarService.ts - Google Calendar API連携サービス
+// GoogleCalendarService.ts - react-native-app-auth対応版（メインサービス）
 
-import { GOOGLE_OAUTH_CLIENT_ID, GOOGLE_CALENDAR_API_KEY, GOOGLE_OAUTH_CLIENT_SECRET } from '@env';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { 
   CalendarInfo, 
@@ -13,11 +12,6 @@ import {
 class GoogleCalendarService {
   private readonly STORAGE_KEY = 'google_calendar_tokens';
   private readonly API_BASE_URL = 'https://www.googleapis.com/calendar/v3';
-  private readonly OAUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
-  private readonly TOKEN_URL = 'https://oauth2.googleapis.com/token';
-  
-  // OAuth認証用のスコープ
-  private readonly SCOPES = 'https://www.googleapis.com/auth/calendar.readonly';
   
   // 認証状態管理
   private authState: AuthState = {
@@ -30,109 +24,23 @@ class GoogleCalendarService {
     return { ...this.authState };
   }
 
-  // OAuth認証URLの生成（React Native対応）
-  generateAuthUrl(): string {
-    const params = new URLSearchParams({
-      client_id: GOOGLE_OAUTH_CLIENT_ID,
-      redirect_uri: 'urn:ietf:wg:oauth:2.0:oob', // モバイルアプリ用の標準URI
-      response_type: 'code',
-      scope: this.SCOPES,
-      access_type: 'offline',
-      prompt: 'consent',
-      state: 'calendar_auth_' + Date.now(),
-    });
-
-    return `${this.OAUTH_URL}?${params.toString()}`;
-  }
-
-  // 認証コードからアクセストークンを取得
-  async exchangeCodeForTokens(authCode: string): Promise<GoogleCalendarTokens | null> {
-    try {
-      this.authState.isLoading = true;
-
-      console.log('Google Calendar認証開始...');
-
-      const requestBody = new URLSearchParams({
-        code: authCode,
-        client_id: GOOGLE_OAUTH_CLIENT_ID,
-        redirect_uri: 'urn:ietf:wg:oauth:2.0:oob',
-        grant_type: 'authorization_code',
-      });
-
-      // client_secretが設定されている場合は追加
-      if (GOOGLE_OAUTH_CLIENT_SECRET) {
-        requestBody.append('client_secret', GOOGLE_OAUTH_CLIENT_SECRET);
-      }
-
-      const tokenResponse = await fetch(this.TOKEN_URL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: requestBody.toString(),
-      });
-
-      if (!tokenResponse.ok) {
-        const errorText = await tokenResponse.text();
-        console.error('認証エラー:', errorText);
-        
-        let errorDetails = `HTTP ${tokenResponse.status}`;
-        try {
-          const errorJson = JSON.parse(errorText);
-          errorDetails += `: ${errorJson.error}`;
-        } catch {
-          errorDetails += `: ${errorText}`;
-        }
-        
-        throw new Error(errorDetails);
-      }
-
-      const tokenData = await tokenResponse.json();
-      
-      const tokens: GoogleCalendarTokens = {
-        accessToken: tokenData.access_token,
-        refreshToken: tokenData.refresh_token,
-        expiryDate: Date.now() + (tokenData.expires_in * 1000),
-        tokenType: tokenData.token_type || 'Bearer',
-      };
-
-      // トークンを保存
-      await this.saveTokens(tokens);
-      
-      this.authState = {
-        isAuthenticated: true,
-        isLoading: false,
-        tokens,
-      };
-
-      return tokens;
-
-    } catch (error) {
-      console.error('認証エラー:', error);
-      this.authState = {
-        isAuthenticated: false,
-        isLoading: false,
-        error: error instanceof Error ? error.message : 'Unknown error',
-      };
-      return null;
-    } finally {
-      this.authState.isLoading = false;
-    }
-  }
-
-  // トークンの保存
-  private async saveTokens(tokens: GoogleCalendarTokens): Promise<void> {
-    try {
-      await AsyncStorage.setItem(this.STORAGE_KEY, JSON.stringify(tokens));
-    } catch (error) {
-      console.error('トークン保存エラー:', error);
-    }
-  }
-
-  // 保存されたトークンの読み込み
+  // 保存されたトークンの読み込み（新旧両方のキーをチェック）
   async loadStoredTokens(): Promise<GoogleCalendarTokens | null> {
     try {
-      const stored = await AsyncStorage.getItem(this.STORAGE_KEY);
+      // 新しいキーを先にチェック
+      let stored = await AsyncStorage.getItem(this.STORAGE_KEY);
+      
+      // 新しいキーにデータがない場合、古いキーをチェック
+      if (!stored) {
+        stored = await AsyncStorage.getItem('google_calendar_tokens_native');
+        if (stored) {
+          // 古いキーから新しいキーにデータを移行
+          await AsyncStorage.setItem(this.STORAGE_KEY, stored);
+          await AsyncStorage.removeItem('google_calendar_tokens_native');
+          console.log('トークンデータを新しいキーに移行しました');
+        }
+      }
+      
       if (!stored) return null;
 
       const tokens: GoogleCalendarTokens = JSON.parse(stored);
@@ -161,6 +69,7 @@ class GoogleCalendarService {
   async clearStoredTokens(): Promise<void> {
     try {
       await AsyncStorage.removeItem(this.STORAGE_KEY);
+      await AsyncStorage.removeItem('google_calendar_tokens_native'); // 古いキーも削除
       this.authState = {
         isAuthenticated: false,
         isLoading: false,
@@ -170,61 +79,19 @@ class GoogleCalendarService {
     }
   }
 
-  // アクセストークンの取得（リフレッシュ処理含む）
-  private async getValidAccessToken(): Promise<string | null> {
+  // 有効なアクセストークンの取得
+  async getValidAccessToken(): Promise<string | null> {
     const tokens = await this.loadStoredTokens();
     if (!tokens) return null;
 
     // トークンがまだ有効な場合
-    if (!tokens.expiryDate || Date.now() < tokens.expiryDate - 60000) { // 1分の余裕を持つ
+    if (!tokens.expiryDate || Date.now() < tokens.expiryDate - 60000) {
       return tokens.accessToken;
     }
 
-    // リフレッシュトークンでアクセストークンを更新
-    if (tokens.refreshToken) {
-      return await this.refreshAccessToken(tokens.refreshToken);
-    }
-
+    // react-native-app-authではリフレッシュは外部で処理される
+    console.log('トークンが期限切れです。再認証が必要です。');
     return null;
-  }
-
-  // アクセストークンのリフレッシュ
-  private async refreshAccessToken(refreshToken: string): Promise<string | null> {
-    try {
-      const response = await fetch(this.TOKEN_URL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: new URLSearchParams({
-          refresh_token: refreshToken,
-          client_id: GOOGLE_OAUTH_CLIENT_ID,
-          grant_type: 'refresh_token',
-        }).toString(),
-      });
-
-      if (!response.ok) {
-        throw new Error(`Token refresh failed: ${response.status}`);
-      }
-
-      const data = await response.json();
-      
-      const newTokens: GoogleCalendarTokens = {
-        accessToken: data.access_token,
-        refreshToken: refreshToken, // リフレッシュトークンは変わらない場合が多い
-        expiryDate: Date.now() + (data.expires_in * 1000),
-        tokenType: data.token_type || 'Bearer',
-      };
-
-      await this.saveTokens(newTokens);
-      this.authState.tokens = newTokens;
-
-      return newTokens.accessToken;
-    } catch (error) {
-      console.error('トークンリフレッシュエラー:', error);
-      await this.clearStoredTokens();
-      return null;
-    }
   }
 
   // 今日のカレンダー情報を取得
@@ -288,10 +155,13 @@ class GoogleCalendarService {
     const response = await fetch(`${this.API_BASE_URL}/calendars/primary/events?${params}`, {
       headers: {
         'Authorization': `Bearer ${accessToken}`,
+        'Accept': 'application/json',
       },
     });
 
     if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`Calendar API error: ${response.status} - ${errorText}`);
       throw new Error(`Calendar API error: ${response.status}`);
     }
 
@@ -379,7 +249,53 @@ class GoogleCalendarService {
       return required;
     } catch (error) {
       console.error('認証チェックエラー:', error);
-      return true; // エラーの場合は認証が必要とみなす
+      return true;
+    }
+  }
+
+  // カレンダー情報のテスト取得（デバッグ用）
+  async testCalendarAccess(): Promise<{success: boolean, message: string, data?: any}> {
+    try {
+      const accessToken = await this.getValidAccessToken();
+      if (!accessToken) {
+        return {
+          success: false,
+          message: '認証が必要です'
+        };
+      }
+
+      // シンプルなCalendar情報取得テスト
+      const response = await fetch(`${this.API_BASE_URL}/calendars/primary`, {
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Accept': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        return {
+          success: false,
+          message: `API呼び出し失敗: ${response.status}`
+        };
+      }
+
+      const calendarData = await response.json();
+      return {
+        success: true,
+        message: 'Google Calendar API接続成功',
+        data: {
+          summary: calendarData.summary,
+          timeZone: calendarData.timeZone,
+          id: calendarData.id,
+        }
+      };
+
+    } catch (error) {
+      console.error('Calendar API テストエラー:', error);
+      return {
+        success: false,
+        message: error instanceof Error ? error.message : 'Unknown error'
+      };
     }
   }
 }
