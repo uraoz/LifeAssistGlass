@@ -2,6 +2,10 @@
 #
 .DS_Store
 
+#Dev documents
+PROJECT_IMPROVEMENT_REPORT.md
+PROJECT_REQUIREMENTS.md
+
 # Environment variables
 .env
 .env.local
