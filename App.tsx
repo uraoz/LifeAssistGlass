@@ -18,7 +18,9 @@ import GoogleAuthNative from './src/components/GoogleAuthNative';
 import UserProfileSetup from './src/components/UserProfileSetup';
 import PersonalizationDashboard from './src/components/PersonalizationDashboard';
 import PersonalizationService from './src/services/PersonalizationService';
+import TTSService from './src/services/TTSService';
 import { UserProfile } from './src/types/personalization';
+import { TTSStatus } from './src/types/tts';
 
 // 環境変数からAPIキーを取得
 const ai = new GoogleGenAI({apiKey: GEMINI_API_KEY});
@@ -32,6 +34,8 @@ const App = () => {
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [setupStatus, setSetupStatus] = useState({ isCompleted: false, progress: 0, missingSteps: [] });
   const [showProfileSetup, setShowProfileSetup] = useState(false);
+  const [ttsStatus, setTTSStatus] = useState<TTSStatus | null>(null);
+  const [ttsEnabled, setTTSEnabled] = useState(true);
 
   // APIキーの設定確認
   useEffect(() => {
@@ -43,23 +47,33 @@ const App = () => {
     }
   }, []);
 
-  // 個人化設定の初期化
+  // 個人化設定とTTSの初期化
   useEffect(() => {
-    initializePersonalization();
+    initializeServices();
   }, []);
 
-  const initializePersonalization = async () => {
+  const initializeServices = async () => {
     try {
-      await PersonalizationService.initialize();
-      const profile = await PersonalizationService.loadUserProfile();
-      const status = await PersonalizationService.getSetupStatus();
+      // PersonalizationServiceとTTSServiceを並行初期化
+      await Promise.all([
+        PersonalizationService.initialize(),
+        TTSService.initialize(),
+      ]);
+
+      const [profile, setupStatus, ttsStatus] = await Promise.all([
+        PersonalizationService.loadUserProfile(),
+        PersonalizationService.getSetupStatus(),
+        TTSService.getStatus(),
+      ]);
       
       setUserProfile(profile);
-      setSetupStatus(status);
+      setSetupStatus(setupStatus);
+      setTTSStatus(ttsStatus);
+      setTTSEnabled(ttsStatus.currentSettings.enabled);
       
-      console.log('個人化設定初期化完了:', { profile, status });
+      console.log('サービス初期化完了:', { profile, setupStatus, ttsStatus });
     } catch (error) {
-      console.error('個人化設定初期化エラー:', error);
+      console.error('サービス初期化エラー:', error);
     }
   };
 
@@ -78,12 +92,75 @@ const App = () => {
         contents: message,
       });
       
-      setResponse(response.text);
+      const responseText = response.text;
+      setResponse(responseText);
+
+      // 音声フィードバックの実行
+      if (ttsEnabled && responseText) {
+        await speakResponse(responseText, 'medium');
+      }
     } catch (error) {
       console.error('API Error:', error);
       Alert.alert('エラー', 'API呼び出しに失敗しました');
+      
+      // エラー時も音声で通知
+      if (ttsEnabled) {
+        await speakResponse('API呼び出しでエラーが発生しました', 'high');
+      }
     } finally {
       setLoading(false);
+    }
+  };
+
+  // 音声読み上げ機能
+  const speakResponse = async (text: string, priority: 'low' | 'medium' | 'high' | 'urgent' = 'medium') => {
+    try {
+      await TTSService.speak({
+        text,
+        priority,
+        onStart: () => console.log('音声読み上げ開始'),
+        onFinish: (finished) => console.log('音声読み上げ完了:', finished),
+        onError: (error) => console.error('音声読み上げエラー:', error),
+      });
+    } catch (error) {
+      console.error('TTS呼び出しエラー:', error);
+    }
+  };
+
+  // TTS設定の切り替え
+  const toggleTTS = async () => {
+    try {
+      const newEnabled = !ttsEnabled;
+      await TTSService.saveSettings({ enabled: newEnabled });
+      setTTSEnabled(newEnabled);
+      
+      // 変更通知
+      if (newEnabled) {
+        await speakResponse('音声機能を有効にしました', 'medium');
+      }
+    } catch (error) {
+      console.error('TTS設定変更エラー:', error);
+    }
+  };
+
+  // TTSテスト機能
+  const testTTS = async () => {
+    try {
+      await speakResponse('音声テストです。TTSサービスが正常に動作しています。', 'medium');
+      console.log('TTS テスト実行');
+    } catch (error) {
+      console.error('TTS テストエラー:', error);
+      Alert.alert('TTS エラー', '音声テストに失敗しました: ' + error);
+    }
+  };
+
+  // TTS停止機能
+  const stopTTS = async () => {
+    try {
+      await TTSService.stop();
+      console.log('TTS停止');
+    } catch (error) {
+      console.error('TTS停止エラー:', error);
     }
   };
 
@@ -168,6 +245,22 @@ const App = () => {
               {GEMINI_API_KEY ? `✓ APIキー設定済み (${GEMINI_API_KEY.substring(0, 8)}...)` : '✗ APIキー未設定'}
             </Text>
           </View>
+
+          {/* TTS設定状況の表示 */}
+          <View style={styles.statusSection}>
+            <Text style={styles.statusLabel}>音声合成 (TTS) 状況:</Text>
+            <Text style={[styles.statusText, ttsStatus?.isInitialized ? styles.statusOk : styles.statusError]}>
+              {ttsStatus?.isInitialized ? '✓ TTS初期化済み' : '✗ TTS初期化失敗'}
+            </Text>
+            <Text style={[styles.statusText, ttsEnabled ? styles.statusOk : styles.statusError]}>
+              {ttsEnabled ? '✓ 音声出力有効' : '✗ 音声出力無効'}
+            </Text>
+            {ttsStatus?.queueLength > 0 && (
+              <Text style={styles.statusText}>
+                📢 読み上げキュー: {ttsStatus.queueLength}件
+              </Text>
+            )}
+          </View>
           
           <View style={styles.section}>
             <Text style={styles.label}>メッセージ:</Text>
@@ -197,6 +290,37 @@ const App = () => {
             >
               <Text style={styles.buttonText}>
                 LifeAssistテスト
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* TTS制御ボタン */}
+          <View style={styles.buttonContainer}>
+            <TouchableOpacity 
+              style={[styles.button, ttsEnabled ? styles.ttsEnabledButton : styles.ttsDisabledButton]} 
+              onPress={toggleTTS}
+            >
+              <Text style={styles.buttonText}>
+                {ttsEnabled ? '🔊 音声ON' : '🔇 音声OFF'}
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={[styles.button, styles.ttsTestButton]} 
+              onPress={testTTS}
+              disabled={!ttsEnabled}
+            >
+              <Text style={styles.buttonText}>
+                🎤 音声テスト
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={[styles.button, styles.ttsStopButton]} 
+              onPress={stopTTS}
+            >
+              <Text style={styles.buttonText}>
+                ⏹️ 停止
               </Text>
             </TouchableOpacity>
           </View>
@@ -332,6 +456,18 @@ const styles = StyleSheet.create({
   },
   testButton: {
     backgroundColor: '#34C759',
+  },
+  ttsEnabledButton: {
+    backgroundColor: '#34C759',
+  },
+  ttsDisabledButton: {
+    backgroundColor: '#8E8E93',
+  },
+  ttsTestButton: {
+    backgroundColor: '#007AFF',
+  },
+  ttsStopButton: {
+    backgroundColor: '#FF3B30',
   },
   buttonText: {
     color: 'white',
