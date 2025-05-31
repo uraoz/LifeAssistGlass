@@ -17,9 +17,7 @@ import {
   TakePhotoOptions,
 } from 'react-native-vision-camera';
 import ImageAnalysisService from '../services/ImageAnalysisService';
-import LocationService from '../services/LocationService';
-import WeatherService from '../services/WeatherService';
-import GoogleCalendarService from '../services/GoogleCalendarService';
+import ContextService, { EnhancedLifeAssistContext } from '../services/ContextService';
 import { AnalysisResult, LifeAssistContext, LocationInfo, WeatherInfo, CalendarInfo } from '../types';
 
 const CameraScreen: React.FC = () => {
@@ -30,6 +28,8 @@ const CameraScreen: React.FC = () => {
   const [currentLocation, setCurrentLocation] = useState<LocationInfo | null>(null);
   const [currentWeather, setCurrentWeather] = useState<WeatherInfo | null>(null);
   const [currentCalendar, setCurrentCalendar] = useState<CalendarInfo | null>(null);
+  const [enhancedContext, setEnhancedContext] = useState<EnhancedLifeAssistContext | null>(null);
+  const [contextQuality, setContextQuality] = useState<any>(null);
   const [loadingStage, setLoadingStage] = useState<string>('');
 
   const camera = useRef<Camera>(null);
@@ -67,137 +67,132 @@ const CameraScreen: React.FC = () => {
     }
   };
 
-  // 画像解析実行（位置情報・天気情報統合版）
+  // 画像解析実行（個人化対応・統合コンテキスト版）
   const analyzePhoto = async () => {
     if (!capturedPhoto) return;
 
     setIsAnalyzing(true);
-    setLoadingStage('位置情報を取得中...');
+    setLoadingStage('統合コンテキストを収集中...');
     
     try {
-      // 1. 位置情報の取得
-      console.log('位置情報取得開始');
-      const location = await LocationService.getCurrentLocation();
-      setCurrentLocation(location);
+      console.log('統合コンテキスト収集開始');
       
-      let weather: WeatherInfo | null = null;
+      // 統合コンテキストの収集
+      const context = await ContextService.collectEnhancedContext({
+        includeLocation: true,
+        includeWeather: true,
+        includeCalendar: true,
+        includePersonalization: true,
+        timeout: 15000,
+      });
+
+      setEnhancedContext(context);
       
-      if (location) {
-        // 2. 天気情報の取得
-        setLoadingStage('天気情報を取得中...');
-        console.log('天気情報取得開始:', location);
-        weather = await WeatherService.getWeatherInfo(location);
-        setCurrentWeather(weather);
-      }
+      // 個別データの状態更新（UI表示用）
+      setCurrentLocation(context.location);
+      setCurrentWeather(context.weather);
+      setCurrentCalendar(context.calendar);
 
-      // 3. カレンダー情報の取得
-      let calendar: CalendarInfo | null = null;
-      setLoadingStage('カレンダー情報を取得中...');
-      console.log('カレンダー情報取得開始');
+      // コンテキスト品質評価
+      const quality = ContextService.assessContextQuality(context);
+      setContextQuality(quality);
       
-      try {
-        const isAuthRequired = await GoogleCalendarService.isAuthenticationRequired();
-        
-        if (!isAuthRequired) {
-          calendar = await GoogleCalendarService.getTodayCalendarInfo();
-          setCurrentCalendar(calendar);
-          console.log('カレンダー情報取得:', calendar ? `今日の予定${calendar.totalEventsToday}件` : '情報なし');
-        }
-      } catch (calendarError) {
-        console.log('カレンダー情報取得をスキップ:', calendarError);
-      }
+      console.log('コンテキスト品質:', quality);
+      console.log(ContextService.summarizeContext(context));
 
-      // 4. LifeAssistコンテキストの生成
-      setLoadingStage('画像を解析中...');
-      
-      const context: LifeAssistContext = {
-        currentTime: new Date().toLocaleString('ja-JP', {
-          year: 'numeric',
-          month: '2-digit',
-          day: '2-digit',
-          hour: '2-digit',
-          minute: '2-digit',
-          second: '2-digit',
-          timeZone: 'Asia/Tokyo'
-        }),
-        location: location,
-        weather: weather,
-        calendar: calendar,
-      };
+      setLoadingStage('個人化AIアドバイスを生成中...');
 
-      console.log('統合コンテキスト:', context);
-
-      // 4. 画像解析実行
+      // 個人化対応画像解析実行
       const result = await ImageAnalysisService.analyzeImageWithPhoto(capturedPhoto.path, context);
       setAnalysisResult(result);
 
+      console.log('個人化アドバイス生成完了:', result);
+
     } catch (error) {
       console.error('統合解析エラー:', error);
-      Alert.alert('エラー', '位置情報または天気情報の取得に失敗しました');
+      Alert.alert('エラー', 'コンテキスト情報の取得に失敗しました');
       
-      // フォールバック：基本情報のみで解析
-      const fallbackContext: LifeAssistContext = {
-        currentTime: new Date().toLocaleString('ja-JP'),
-      };
-      
-      const result = await ImageAnalysisService.analyzeImageWithPhoto(capturedPhoto.path, fallbackContext);
-      setAnalysisResult(result);
+      // フォールバック：基本コンテキストで解析
+      try {
+        setLoadingStage('基本コンテキストで解析中...');
+        const basicContext = await ContextService.collectBasicContext();
+        const result = await ImageAnalysisService.analyzeImageWithPhoto(capturedPhoto.path, basicContext);
+        setAnalysisResult(result);
+      } catch (fallbackError) {
+        console.error('フォールバック解析エラー:', fallbackError);
+        const errorResult = {
+          text: '解析に失敗しました。ネットワーク接続を確認してください。',
+          timestamp: new Date(),
+          success: false,
+          error: fallbackError instanceof Error ? fallbackError.message : '不明なエラー'
+        };
+        setAnalysisResult(errorResult);
+      }
     } finally {
       setIsAnalyzing(false);
       setLoadingStage('');
     }
   };
 
-  // 位置情報・天気情報統合テスト（画像なし）
+  // 統合コンテキストテスト（画像なし）
   const testAPIWithLocation = async () => {
     setIsAnalyzing(true);
-    setLoadingStage('位置情報を取得中...');
+    setLoadingStage('統合コンテキストを収集中...');
     
     try {
-      // 位置情報取得
-      const location = await LocationService.getCurrentLocation();
-      setCurrentLocation(location);
+      console.log('統合コンテキストテスト開始');
       
-      let weather: WeatherInfo | null = null;
-      
-      if (location) {
-        // 天気情報取得
-        setLoadingStage('天気情報を取得中...');
-        weather = await WeatherService.getWeatherInfo(location);
-        setCurrentWeather(weather);
-      }
+      // 統合コンテキストの収集
+      const context = await ContextService.collectEnhancedContext({
+        includeLocation: true,
+        includeWeather: true,
+        includeCalendar: true,
+        includePersonalization: true,
+        timeout: 15000,
+      });
 
-      // カレンダー情報取得
-      let calendar: CalendarInfo | null = null;
-      setLoadingStage('カレンダー情報を取得中...');
+      setEnhancedContext(context);
       
-      try {
-        const isAuthRequired = await GoogleCalendarService.isAuthenticationRequired();
-        
-        if (!isAuthRequired) {
-          calendar = await GoogleCalendarService.getTodayCalendarInfo();
-          setCurrentCalendar(calendar);
-        }
-      } catch (calendarError) {
-        console.log('カレンダー情報取得をスキップ:', calendarError);
-      }
+      // 個別データの状態更新（UI表示用）
+      setCurrentLocation(context.location);
+      setCurrentWeather(context.weather);
+      setCurrentCalendar(context.calendar);
 
-      // 統合コンテキストでテスト
-      setLoadingStage('AIアドバイスを生成中...');
+      // コンテキスト品質評価
+      const quality = ContextService.assessContextQuality(context);
+      setContextQuality(quality);
       
-      const context: LifeAssistContext = {
-        currentTime: new Date().toLocaleString('ja-JP'),
-        location: location,
-        weather: weather,
-        calendar: calendar,
-      };
+      console.log('テスト - コンテキスト品質:', quality);
+      console.log('テスト - コンテキスト要約:', ContextService.summarizeContext(context));
 
+      setLoadingStage('個人化AIアドバイスを生成中...');
+
+      // 個人化対応テキスト解析実行
       const result = await ImageAnalysisService.analyzeImage('', context);
       setAnalysisResult(result);
 
+      console.log('個人化テストアドバイス:', result);
+
     } catch (error) {
       console.error('統合テストエラー:', error);
-      Alert.alert('エラー', '位置情報または天気情報の取得に失敗しました');
+      Alert.alert('エラー', 'コンテキスト情報の取得に失敗しました');
+      
+      // フォールバック
+      try {
+        setLoadingStage('基本テスト実行中...');
+        const basicContext = await ContextService.collectBasicContext();
+        const result = await ImageAnalysisService.analyzeImage('', basicContext);
+        setAnalysisResult(result);
+      } catch (fallbackError) {
+        console.error('フォールバックテストエラー:', fallbackError);
+        const errorResult = {
+          text: 'テストに失敗しました。設定を確認してください。',
+          timestamp: new Date(),
+          success: false,
+          error: fallbackError instanceof Error ? fallbackError.message : '不明なエラー'
+        };
+        setAnalysisResult(errorResult);
+      }
     } finally {
       setIsAnalyzing(false);
       setLoadingStage('');
@@ -285,10 +280,63 @@ const CameraScreen: React.FC = () => {
             </View>
           )}
 
-          {/* 位置情報・天気情報・カレンダー情報表示 */}
+          {/* コンテキスト品質評価表示 */}
+          {contextQuality && (
+            <View style={styles.qualityContainer}>
+              <Text style={styles.qualityLabel}>🎯 個人化品質スコア: {contextQuality.score}/100</Text>
+              <View style={styles.qualityBar}>
+                <View style={[styles.qualityFill, { width: `${contextQuality.score}%` }]} />
+              </View>
+              <Text style={styles.qualityDetails}>
+                完成度: {contextQuality.completeness}% | 
+                個人化: {contextQuality.personalizationLevel === 'high' ? '🟢 高' : 
+                        contextQuality.personalizationLevel === 'medium' ? '🟡 中' : 
+                        contextQuality.personalizationLevel === 'basic' ? '🟠 基本' : '🔴 なし'}
+              </Text>
+              {contextQuality.recommendations.length > 0 && (
+                <Text style={styles.qualityRecommendations}>
+                  💡 {contextQuality.recommendations[0]}
+                </Text>
+              )}
+            </View>
+          )}
+
+          {/* 個人化コンテキスト表示 */}
+          {enhancedContext && (
+            <View style={styles.contextContainer}>
+              <Text style={styles.contextLabel}>
+                🧠 個人化コンテキスト ({enhancedContext.personalSchedule.isPersonalized ? '有効' : '基本'})
+              </Text>
+              
+              <View style={styles.infoBox}>
+                <Text style={styles.infoTitle}>時間的コンテキスト</Text>
+                <Text style={styles.infoText}>
+                  📅 {enhancedContext.timeContext.dayOfWeek} | 
+                  🕐 {enhancedContext.timeContext.timeOfDay} | 
+                  🗓️ {enhancedContext.timeContext.season}
+                </Text>
+              </View>
+
+              {enhancedContext.personalSchedule.isPersonalized && (
+                <View style={styles.infoBox}>
+                  <Text style={styles.infoTitle}>個人スケジュール</Text>
+                  <Text style={styles.infoText}>
+                    段階: {enhancedContext.personalSchedule.schedulePhase}
+                  </Text>
+                  {enhancedContext.personalSchedule.currentPattern && (
+                    <Text style={styles.infoSubText}>
+                      パターン: {enhancedContext.personalSchedule.currentPattern}
+                    </Text>
+                  )}
+                </View>
+              )}
+            </View>
+          )}
+
+          {/* 基本情報表示 */}
           {(currentLocation || currentWeather || currentCalendar) && (
             <View style={styles.contextContainer}>
-              <Text style={styles.contextLabel}>📍 取得した情報:</Text>
+              <Text style={styles.contextLabel}>📍 基本情報:</Text>
               
               {currentLocation && (
                 <View style={styles.infoBox}>
@@ -540,6 +588,42 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#777',
     marginTop: 2,
+  },
+  qualityContainer: {
+    margin: 20,
+    marginTop: 10,
+    backgroundColor: '#f0f9ff',
+    padding: 15,
+    borderRadius: 8,
+    borderLeftWidth: 4,
+    borderLeftColor: '#007AFF',
+  },
+  qualityLabel: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 8,
+  },
+  qualityBar: {
+    height: 6,
+    backgroundColor: '#e0e0e0',
+    borderRadius: 3,
+    marginBottom: 8,
+  },
+  qualityFill: {
+    height: '100%',
+    backgroundColor: '#34C759',
+    borderRadius: 3,
+  },
+  qualityDetails: {
+    fontSize: 12,
+    color: '#666',
+    marginBottom: 4,
+  },
+  qualityRecommendations: {
+    fontSize: 11,
+    color: '#007AFF',
+    fontStyle: 'italic',
   },
 });
 

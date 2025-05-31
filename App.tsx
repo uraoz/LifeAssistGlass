@@ -15,6 +15,10 @@ import { GoogleGenAI } from '@google/genai';
 import { GEMINI_API_KEY } from '@env';
 import CameraScreen from './src/components/CameraScreen';
 import GoogleAuthNative from './src/components/GoogleAuthNative';
+import UserProfileSetup from './src/components/UserProfileSetup';
+import PersonalizationDashboard from './src/components/PersonalizationDashboard';
+import PersonalizationService from './src/services/PersonalizationService';
+import { UserProfile } from './src/types/personalization';
 
 // 環境変数からAPIキーを取得
 const ai = new GoogleGenAI({apiKey: GEMINI_API_KEY});
@@ -23,8 +27,11 @@ const App = () => {
   const [message, setMessage] = useState('');
   const [response, setResponse] = useState('');
   const [loading, setLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState<'text' | 'camera' | 'calendar'>('text');
+  const [activeTab, setActiveTab] = useState<'text' | 'camera' | 'calendar' | 'profile'>('text');
   const [calendarConnected, setCalendarConnected] = useState(false);
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+  const [setupStatus, setSetupStatus] = useState({ isCompleted: false, progress: 0, missingSteps: [] });
+  const [showProfileSetup, setShowProfileSetup] = useState(false);
 
   // APIキーの設定確認
   useEffect(() => {
@@ -35,6 +42,26 @@ const App = () => {
       );
     }
   }, []);
+
+  // 個人化設定の初期化
+  useEffect(() => {
+    initializePersonalization();
+  }, []);
+
+  const initializePersonalization = async () => {
+    try {
+      await PersonalizationService.initialize();
+      const profile = await PersonalizationService.loadUserProfile();
+      const status = await PersonalizationService.getSetupStatus();
+      
+      setUserProfile(profile);
+      setSetupStatus(status);
+      
+      console.log('個人化設定初期化完了:', { profile, status });
+    } catch (error) {
+      console.error('個人化設定初期化エラー:', error);
+    }
+  };
 
   // Gemini APIにメッセージを送信
   const sendToGemini = async () => {
@@ -85,6 +112,19 @@ const App = () => {
     setCalendarConnected(false);
   };
 
+  // プロファイル設定完了時のハンドラ
+  const handleProfileSetupComplete = (profile: UserProfile) => {
+    setUserProfile(profile);
+    setShowProfileSetup(false); // 設定画面を閉じる
+    initializePersonalization(); // 設定状況を再確認
+    Alert.alert('設定完了', '個人化設定が完了しました！より精度の高いアドバイスを提供できます。');
+  };
+
+  // プロファイル設定開始時のハンドラ
+  const handleStartProfileSetup = () => {
+    setShowProfileSetup(true);
+  };
+
   const renderContent = () => {
     if (activeTab === 'camera') {
       return <CameraScreen />;
@@ -97,6 +137,22 @@ const App = () => {
           onAuthError={handleCalendarAuthError}
         />
       );
+    }
+
+    if (activeTab === 'profile') {
+      if (showProfileSetup) {
+        return (
+          <UserProfileSetup 
+            onSetupComplete={handleProfileSetupComplete}
+          />
+        );
+      } else {
+        return (
+          <PersonalizationDashboard 
+            onStartSetup={handleStartProfileSetup}
+          />
+        );
+      }
     }
     
     // テキスト入力タブの内容（既存のUI）
@@ -187,6 +243,17 @@ const App = () => {
           <Text style={[styles.tabText, activeTab === 'calendar' && styles.activeTabText]}>
             📅 Calendar
             {calendarConnected && ' ✓'}
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity 
+          style={[styles.tab, activeTab === 'profile' && styles.activeTab]}
+          onPress={() => setActiveTab('profile')}
+        >
+          <Text style={[styles.tabText, activeTab === 'profile' && styles.activeTabText]}>
+            👤 Profile
+            {setupStatus.isCompleted && ' ✓'}
+            {!setupStatus.isCompleted && setupStatus.progress > 0 && ` ${setupStatus.progress}%`}
           </Text>
         </TouchableOpacity>
       </View>

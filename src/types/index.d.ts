@@ -13,5 +13,8 @@ export * from './lifeassist';
 // カメラ関連
 export * from './camera';
 
+// 個人化設定関連
+export * from './personalization';
+
 // 環境変数
 export * from './env';
