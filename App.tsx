@@ -14,6 +14,7 @@ import {
 import { GoogleGenAI } from '@google/genai';
 import { GEMINI_API_KEY } from '@env';
 import CameraScreen from './src/components/CameraScreen';
+import GoogleAuthWebView from './src/components/GoogleAuthWebView';
 
 // 環境変数からAPIキーを取得
 const ai = new GoogleGenAI({apiKey: GEMINI_API_KEY});
@@ -22,7 +23,8 @@ const App = () => {
   const [message, setMessage] = useState('');
   const [response, setResponse] = useState('');
   const [loading, setLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState<'text' | 'camera'>('text');
+  const [activeTab, setActiveTab] = useState<'text' | 'camera' | 'calendar'>('text');
+  const [calendarConnected, setCalendarConnected] = useState(false);
 
   // APIキーの設定確認
   useEffect(() => {
@@ -73,9 +75,28 @@ const App = () => {
     setMessage(prompt);
   };
 
+  // Calendar認証成功時のハンドラ
+  const handleCalendarAuthSuccess = () => {
+    setCalendarConnected(true);
+  };
+
+  // Calendar認証エラー時のハンドラ
+  const handleCalendarAuthError = (error: string) => {
+    setCalendarConnected(false);
+  };
+
   const renderContent = () => {
     if (activeTab === 'camera') {
       return <CameraScreen />;
+    }
+    
+    if (activeTab === 'calendar') {
+      return (
+        <GoogleAuthWebView 
+          onAuthSuccess={handleCalendarAuthSuccess}
+          onAuthError={handleCalendarAuthError}
+        />
+      );
     }
     
     // テキスト入力タブの内容（既存のUI）
@@ -156,6 +177,16 @@ const App = () => {
         >
           <Text style={[styles.tabText, activeTab === 'camera' && styles.activeTabText]}>
             カメラ機能
+          </Text>
+        </TouchableOpacity>
+        
+        <TouchableOpacity 
+          style={[styles.tab, activeTab === 'calendar' && styles.activeTab]}
+          onPress={() => setActiveTab('calendar')}
+        >
+          <Text style={[styles.tabText, activeTab === 'calendar' && styles.activeTabText]}>
+            📅 Calendar
+            {calendarConnected && ' ✓'}
           </Text>
         </TouchableOpacity>
       </View>

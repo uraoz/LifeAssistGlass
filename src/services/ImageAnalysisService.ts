@@ -62,23 +62,65 @@ class ImageAnalysisService {
     return parts.length > 0 ? parts.join(', ') : '天気情報取得中';
   }
 
+  // カレンダー情報を文字列に変換
+  private formatCalendarInfo(calendar: any): string {
+    if (!calendar) return '取得なし';
+    
+    const parts: string[] = [];
+    
+    // 現在のイベント
+    if (calendar.currentEvent) {
+      const event = calendar.currentEvent;
+      const endTime = new Date(event.end.dateTime || event.end.date || '');
+      const remainingMinutes = Math.round((endTime.getTime() - new Date().getTime()) / (1000 * 60));
+      parts.push(`現在: ${event.summary}（あと${remainingMinutes}分）`);
+    }
+    
+    // 次のイベント
+    if (calendar.nextEvent) {
+      const event = calendar.nextEvent;
+      const startTime = new Date(event.start.dateTime || event.start.date || '');
+      const minutesUntil = Math.round((startTime.getTime() - new Date().getTime()) / (1000 * 60));
+      
+      if (minutesUntil <= 60) {
+        parts.push(`次: ${event.summary}（${minutesUntil}分後）`);
+      } else {
+        const hours = Math.round(minutesUntil / 60);
+        parts.push(`次: ${event.summary}（${hours}時間後）`);
+      }
+    }
+    
+    // 今日の予定総数
+    if (calendar.totalEventsToday > 0) {
+      parts.push(`今日の予定: ${calendar.totalEventsToday}件`);
+    } else {
+      parts.push('今日は予定なし');
+    }
+    
+    return parts.length > 0 ? parts.join(' / ') : 'カレンダー情報取得中';
+  }
+
   // LifeAssist用プロンプト生成（テキストのみ）
   private generateLifeAssistPrompt(context: LifeAssistContext): string {
     const locationText = this.formatLocationInfo(context.location);
     const weatherText = this.formatWeatherInfo(context.weather);
+    const calendarText = this.formatCalendarInfo(context.calendar);
 
     return `あなたは装着者の生活をサポートするAIアシスタントです。
 
 【現在時刻】: ${context.currentTime}
 【現在地】: ${locationText}
 【天気状況】: ${weatherText}
+【スケジュール】: ${calendarText}
 
 上記の情報を基に、装着者に対する適切なアドバイス・情報提供を日本語で50文字以内で生成してください。
 
-現在地と天気を考慮して、以下のような実用的なアドバイスを提供してください：
+現在地・天気・スケジュールを総合的に考慮して、以下のような実用的なアドバイスを提供してください：
+- スケジュールに関する提案や注意点
 - 外出時の注意点（天気・気温に応じた服装など）
 - 現在地周辺の情報
 - 健康・安全面でのアドバイス
+- 時間管理に関するアドバイス
 
 簡潔で実用的なアドバイスをお願いします。`;
   }
@@ -87,6 +129,7 @@ class ImageAnalysisService {
   private generateImageAnalysisPrompt(context: LifeAssistContext): string {
     const locationText = this.formatLocationInfo(context.location);
     const weatherText = this.formatWeatherInfo(context.weather);
+    const calendarText = this.formatCalendarInfo(context.calendar);
 
     return `あなたは装着者の生活をサポートするAIアシスタントです。
 
@@ -94,11 +137,13 @@ class ImageAnalysisService {
 【現在時刻】: ${context.currentTime}
 【現在地】: ${locationText}
 【天気状況】: ${weatherText}
+【スケジュール】: ${calendarText}
 
 この画像と現在の状況を分析して、装着者に対する適切なアドバイス・情報提供を日本語で50文字以内で生成してください。
 
-画像の内容と現在地・天気情報を組み合わせて、以下のような観点からアドバイスしてください：
+画像の内容と現在地・天気・スケジュール情報を組み合わせて、以下のような観点からアドバイスしてください：
 - 画像に映っている物や状況に関する情報
+- スケジュールを踏まえた時間管理のアドバイス
 - 現在の天気・位置を考慮した安全面でのアドバイス
 - 効率的な行動提案
 - 健康面での注意点

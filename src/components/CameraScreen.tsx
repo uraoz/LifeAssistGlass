@@ -19,7 +19,8 @@ import {
 import ImageAnalysisService from '../services/ImageAnalysisService';
 import LocationService from '../services/LocationService';
 import WeatherService from '../services/WeatherService';
-import { AnalysisResult, LifeAssistContext, LocationInfo, WeatherInfo } from '../types';
+import GoogleCalendarService from '../services/GoogleCalendarService';
+import { AnalysisResult, LifeAssistContext, LocationInfo, WeatherInfo, CalendarInfo } from '../types';
 
 const CameraScreen: React.FC = () => {
   const [capturedPhoto, setCapturedPhoto] = useState<PhotoFile | null>(null);
@@ -28,6 +29,7 @@ const CameraScreen: React.FC = () => {
   const [showPreview, setShowPreview] = useState(false);
   const [currentLocation, setCurrentLocation] = useState<LocationInfo | null>(null);
   const [currentWeather, setCurrentWeather] = useState<WeatherInfo | null>(null);
+  const [currentCalendar, setCurrentCalendar] = useState<CalendarInfo | null>(null);
   const [loadingStage, setLoadingStage] = useState<string>('');
 
   const camera = useRef<Camera>(null);
@@ -88,7 +90,24 @@ const CameraScreen: React.FC = () => {
         setCurrentWeather(weather);
       }
 
-      // 3. LifeAssistコンテキストの生成
+      // 3. カレンダー情報の取得
+      let calendar: CalendarInfo | null = null;
+      setLoadingStage('カレンダー情報を取得中...');
+      console.log('カレンダー情報取得開始');
+      
+      try {
+        const isAuthRequired = await GoogleCalendarService.isAuthenticationRequired();
+        
+        if (!isAuthRequired) {
+          calendar = await GoogleCalendarService.getTodayCalendarInfo();
+          setCurrentCalendar(calendar);
+          console.log('カレンダー情報取得:', calendar ? `今日の予定${calendar.totalEventsToday}件` : '情報なし');
+        }
+      } catch (calendarError) {
+        console.log('カレンダー情報取得をスキップ:', calendarError);
+      }
+
+      // 4. LifeAssistコンテキストの生成
       setLoadingStage('画像を解析中...');
       
       const context: LifeAssistContext = {
@@ -103,6 +122,7 @@ const CameraScreen: React.FC = () => {
         }),
         location: location,
         weather: weather,
+        calendar: calendar,
       };
 
       console.log('統合コンテキスト:', context);
@@ -147,6 +167,21 @@ const CameraScreen: React.FC = () => {
         setCurrentWeather(weather);
       }
 
+      // カレンダー情報取得
+      let calendar: CalendarInfo | null = null;
+      setLoadingStage('カレンダー情報を取得中...');
+      
+      try {
+        const isAuthRequired = await GoogleCalendarService.isAuthenticationRequired();
+        
+        if (!isAuthRequired) {
+          calendar = await GoogleCalendarService.getTodayCalendarInfo();
+          setCurrentCalendar(calendar);
+        }
+      } catch (calendarError) {
+        console.log('カレンダー情報取得をスキップ:', calendarError);
+      }
+
       // 統合コンテキストでテスト
       setLoadingStage('AIアドバイスを生成中...');
       
@@ -154,6 +189,7 @@ const CameraScreen: React.FC = () => {
         currentTime: new Date().toLocaleString('ja-JP'),
         location: location,
         weather: weather,
+        calendar: calendar,
       };
 
       const result = await ImageAnalysisService.analyzeImage('', context);
@@ -249,8 +285,8 @@ const CameraScreen: React.FC = () => {
             </View>
           )}
 
-          {/* 位置情報・天気情報表示 */}
-          {(currentLocation || currentWeather) && (
+          {/* 位置情報・天気情報・カレンダー情報表示 */}
+          {(currentLocation || currentWeather || currentCalendar) && (
             <View style={styles.contextContainer}>
               <Text style={styles.contextLabel}>📍 取得した情報:</Text>
               
@@ -271,6 +307,25 @@ const CameraScreen: React.FC = () => {
                   </Text>
                   <Text style={styles.infoSubText}>
                     💧 湿度: {currentWeather.humidity}% | 🌬️ 風速: {currentWeather.windSpeed}m/s
+                  </Text>
+                </View>
+              )}
+
+              {currentCalendar && (
+                <View style={styles.infoBox}>
+                  <Text style={styles.infoTitle}>スケジュール情報</Text>
+                  {currentCalendar.currentEvent && (
+                    <Text style={styles.infoText}>
+                      🔴 現在: {currentCalendar.currentEvent.summary}
+                    </Text>
+                  )}
+                  {currentCalendar.nextEvent && (
+                    <Text style={styles.infoText}>
+                      ⏰ 次: {currentCalendar.nextEvent.summary}
+                    </Text>
+                  )}
+                  <Text style={styles.infoSubText}>
+                    📅 今日の予定: {currentCalendar.totalEventsToday}件
                   </Text>
                 </View>
               )}
