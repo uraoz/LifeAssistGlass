@@ -1,13 +1,25 @@
 {
   "name": "LifeAssistGlass",
-  "version": "0.0.1",
+  "version": "0.1.0",
+  "description": "AIを活用したライフアシスタントアプリケーション - 個人の生活パターンを学習し、コンテキストに応じた最適なアドバイスを提供",
+  "author": "Development Team",
   "private": true,
+  "keywords": ["react-native", "ai", "life-assistant", "personalization", "context-aware"],
   "scripts": {
     "android": "react-native run-android",
     "ios": "react-native run-ios",
     "lint": "eslint .",
     "start": "react-native start",
-    "test": "jest"
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "test:services": "jest __tests__/services",
+    "test:components": "jest __tests__/components", 
+    "test:integration": "jest __tests__/integration",
+    "test:app": "jest __tests__/App.test.tsx",
+    "test:verbose": "jest --verbose",
+    "test:silent": "jest --silent",
+    "test:updateSnapshot": "jest --updateSnapshot"
   },
   "dependencies": {
     "@google/genai": "^1.1.0",
