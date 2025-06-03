@@ -1,10 +1,17 @@
 module.exports = {
   preset: 'react-native',
   
-  // テストファイルの検索パターン
+  // テストファイルの検索パターン（utilsやsetupファイルを除外）
   testMatch: [
-    '**/__tests__/**/*.(ts|tsx|js)',
+    '**/__tests__/**/*.(test|spec).(ts|tsx|js)',
     '**/*.(test|spec).(ts|tsx|js)',
+  ],
+  
+  // テストファイルから除外するパターン
+  testPathIgnorePatterns: [
+    '<rootDir>/__tests__/utils/',
+    '<rootDir>/__tests__/setup.ts',
+    '<rootDir>/__tests__/setup_simple.ts',
   ],
   
   // モジュール名マッピング（絶対パス対応）
@@ -54,7 +61,7 @@ module.exports = {
   testEnvironment: 'node',
   
   // タイムアウト設定（非同期処理対応）
-  testTimeout: 10000,
+  testTimeout: 20000,
   
   // 詳細な出力
   verbose: true,

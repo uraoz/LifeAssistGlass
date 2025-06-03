@@ -88,7 +88,7 @@ const App = () => {
     try {
       // 新しい@google/genai SDKを使用
       const response = await ai.models.generateContent({
-        model: 'gemini-2.0-flash-001',
+        model: 'gemini-2.5-flash-preview-05-20',
         contents: message,
       });
       

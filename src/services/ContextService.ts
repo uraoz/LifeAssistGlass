@@ -95,13 +95,23 @@ class ContextService {
       }
       
       // 個人化データ
-      let personalizationPromise: Promise<any> = Promise.resolve(null);
+      let personalizationPromise: Promise<any> = Promise.resolve({
+        personalization: this.getDefaultPersonalization(),
+        personalSchedule: this.getDefaultPersonalSchedule(),
+      });
+      
       if (config.includePersonalization) {
         personalizationPromise = this.withTimeout(
           this.getPersonalizationData(),
           config.timeout / 4,
           'personalization'
-        );
+        ).catch((error) => {
+          console.warn('個人化データ取得タイムアウト/エラー:', error);
+          return {
+            personalization: this.getDefaultPersonalization(),
+            personalSchedule: this.getDefaultPersonalSchedule(),
+          };
+        });
       }
       
       // 基本データを並行取得
@@ -111,7 +121,9 @@ class ContextService {
       ]);
 
       const location = this.extractResult(locationResult, 'location');
-      const { personalization, personalSchedule } = this.extractResult(personalizationResult, 'personalization') || {};
+      const personalizationData = this.extractResult(personalizationResult, 'personalization');
+      const personalization = personalizationData?.personalization || this.getDefaultPersonalization();
+      const personalSchedule = personalizationData?.personalSchedule || this.getDefaultPersonalSchedule();
 
       // 位置依存データ（天気・カレンダー）を順次取得
       let weather = null;
@@ -153,8 +165,8 @@ class ContextService {
         calendar,
 
         // 拡張情報
-        personalization: personalization || await this.getDefaultPersonalization(),
-        personalSchedule: personalSchedule || await this.getDefaultPersonalSchedule(),
+        personalization,
+        personalSchedule,
         timeContext,
       };
 
@@ -172,10 +184,14 @@ class ContextService {
       console.error('統合コンテキスト収集エラー:', error);
       
       // エラー時のフォールバック
+      // エラー時のフォールバック（同期処理のみ）
       return {
         currentTime: new Date().toLocaleString('ja-JP'),
-        personalization: await this.getDefaultPersonalization(),
-        personalSchedule: await this.getDefaultPersonalSchedule(),
+        location: null,
+        weather: null,
+        calendar: null,
+        personalization: this.getDefaultPersonalization(),
+        personalSchedule: this.getDefaultPersonalSchedule(),
         timeContext: this.generateTimeContext(),
       };
     }
@@ -201,18 +217,37 @@ class ContextService {
     personalization: PersonalizationData;
     personalSchedule: PersonalScheduleContext;
   }> {
-    await PersonalizationService.initialize();
-    
-    const [personalization, personalSchedule] = await Promise.all([
-      PersonalizationService.getPersonalizationData(),
-      PersonalizationService.getPersonalScheduleContext(),
-    ]);
+    try {
+      await PersonalizationService.initialize();
+      
+      const [personalization, personalSchedule] = await Promise.all([
+        PersonalizationService.getPersonalizationData().catch(error => {
+          console.warn('個人化データ取得エラー:', error);
+          return null;
+        }),
+        PersonalizationService.getPersonalScheduleContext().catch(error => {
+          console.warn('個人スケジュールコンテキスト取得エラー:', error);
+          return null;
+        }),
+      ]);
 
-    return { personalization, personalSchedule };
+      return {
+        personalization: personalization || this.getDefaultPersonalization(),
+        personalSchedule: personalSchedule || this.getDefaultPersonalSchedule(),
+      };
+    } catch (error) {
+      console.warn('PersonalizationService初期化エラー:', error);
+      
+      // 初期化に失敗した場合はデフォルト値を使用
+      return {
+        personalization: this.getDefaultPersonalization(),
+        personalSchedule: this.getDefaultPersonalSchedule(),
+      };
+    }
   }
 
   // デフォルト個人化データ
-  private async getDefaultPersonalization(): Promise<PersonalizationData> {
+  private getDefaultPersonalization(): PersonalizationData {
     return {
       settings: {
         adviceFrequency: 'medium',
@@ -230,7 +265,7 @@ class ContextService {
   }
 
   // デフォルト個人スケジュール
-  private async getDefaultPersonalSchedule(): Promise<PersonalScheduleContext> {
+  private getDefaultPersonalSchedule(): PersonalScheduleContext {
     return {
       isPersonalized: false,
       schedulePhase: this.detectGeneralSchedulePhase(),
@@ -341,11 +376,22 @@ class ContextService {
     timeoutMs: number,
     label: string
   ): Promise<T> {
-    const timeoutPromise = new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error(`${label} timeout after ${timeoutMs}ms`)), timeoutMs)
-    );
+    let timeoutId: NodeJS.Timeout;
+    
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timeoutId = setTimeout(() => {
+        reject(new Error(`${label} timeout after ${timeoutMs}ms`));
+      }, timeoutMs);
+    });
 
-    return Promise.race([promise, timeoutPromise]);
+    try {
+      const result = await Promise.race([promise, timeoutPromise]);
+      clearTimeout(timeoutId);
+      return result;
+    } catch (error) {
+      clearTimeout(timeoutId);
+      throw error;
+    }
   }
 
   // Promise結果の抽出
@@ -398,16 +444,23 @@ class ContextService {
       score += 30;
       completeness += 25;
       
-      if (context.personalization.userProfile && context.personalization.weeklySchedule) {
+      // userProfileが存在し、個人化が有効な場合は"high"と判定
+      if (context.personalization.userProfile) {
         personalizationLevel = 'high';
         score += 20;
-      } else if (context.personalization.userProfile) {
+      } else if (context.personalization.settings) {
         personalizationLevel = 'medium';
         score += 10;
       } else {
         personalizationLevel = 'basic';
       }
     } else {
+      // 個人化が無効でもuserProfileがある場合は考慮
+      if (context.personalization.userProfile) {
+        personalizationLevel = 'medium';
+        score += 15;
+        completeness += 15;
+      }
       recommendations.push('個人プロファイル設定で高精度なアドバイス');
     }
 
