@@ -143,11 +143,26 @@ const App = () => {
     }
   };
 
-  // TTSテスト機能
+  // TTSテスト機能（強化版）
   const testTTS = async () => {
     try {
-      await speakResponse('音声テストです。TTSサービスが正常に動作しています。', 'medium');
-      console.log('TTS テスト実行');
+      // 統合TTS機能テスト
+      const testMessages = [
+        { text: '音声テストを開始します。', priority: 'medium' as const },
+        { text: 'TTSサービスが正常に動作しています。', priority: 'medium' as const },
+        { text: '個人化機能と統合されたアドバイス機能も準備完了です。', priority: 'low' as const },
+        { text: '音声テスト完了。LifeAssistGlassの音声機能が利用可能です。', priority: 'medium' as const },
+      ];
+
+      // 順次読み上げ（少し間隔を開けて）
+      for (let i = 0; i < testMessages.length; i++) {
+        await speakResponse(testMessages[i].text, testMessages[i].priority);
+        if (i < testMessages.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 1000)); // 1秒間隔
+        }
+      }
+      
+      console.log('統合TTS テスト実行完了');
     } catch (error) {
       console.error('TTS テストエラー:', error);
       Alert.alert('TTS エラー', '音声テストに失敗しました: ' + error);
@@ -165,7 +180,7 @@ const App = () => {
   };
 
   // LifeAssist Glass用のテストプロンプト
-  const testLifeAssistPrompt = () => {
+  const testLifeAssistPrompt = async () => {
     const prompt = `
 あなたは装着者の生活をサポートするAIアシスタントです。
 
@@ -177,6 +192,11 @@ const App = () => {
     `;
     
     setMessage(prompt);
+    
+    // テストプロンプト設定をTTSで通知
+    if (ttsEnabled) {
+      await speakResponse('LifeAssistテストプロンプトを設定しました。送信ボタンを押してください。', 'medium');
+    }
   };
 
   // Calendar認証成功時のハンドラ
@@ -190,16 +210,43 @@ const App = () => {
   };
 
   // プロファイル設定完了時のハンドラ
-  const handleProfileSetupComplete = (profile: UserProfile) => {
+  const handleProfileSetupComplete = async (profile: UserProfile) => {
     setUserProfile(profile);
     setShowProfileSetup(false); // 設定画面を閉じる
-    initializePersonalization(); // 設定状況を再確認
+    await initializePersonalization(); // 設定状況を再確認
+    
     Alert.alert('設定完了', '個人化設定が完了しました！より精度の高いアドバイスを提供できます。');
+    
+    // 設定完了をTTSで通知
+    if (ttsEnabled) {
+      await speakResponse(
+        '個人化設定が完了しました。これでより精度の高いアドバイスを提供できます。',
+        'medium'
+      );
+    }
   };
 
   // プロファイル設定開始時のハンドラ
-  const handleStartProfileSetup = () => {
+  const handleStartProfileSetup = async () => {
     setShowProfileSetup(true);
+    
+    // 設定開始をTTSで通知
+    if (ttsEnabled) {
+      await speakResponse(
+        '個人化設定を開始します。画面の指示に従って入力してください。',
+        'medium'
+      );
+    }
+  };
+
+  // 個人化初期化メソッドを追加
+  const initializePersonalization = async () => {
+    try {
+      const status = await PersonalizationService.getSetupStatus();
+      setSetupStatus(status);
+    } catch (error) {
+      console.error('個人化初期化エラー:', error);
+    }
   };
 
   const renderContent = () => {

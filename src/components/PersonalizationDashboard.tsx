@@ -15,6 +15,7 @@ import PersonalizationService from '../services/PersonalizationService';
 import ImageAnalysisService from '../services/ImageAnalysisService';
 import ContextService from '../services/ContextService';
 import LocationService from '../services/LocationService';
+import TTSService from '../services/TTSService';
 import {
   UserProfile,
   PersonalizationData,
@@ -76,10 +77,42 @@ const PersonalizationDashboard: React.FC<PersonalizationDashboardProps> = ({ onS
   const [testResult, setTestResult] = useState<string>('');
   const [isTesting, setIsTesting] = useState(false);
   const [debugResult, setDebugResult] = useState<string>('');
+  const [ttsEnabled, setTTSEnabled] = useState(true);
 
   useEffect(() => {
     loadPersonalizationData();
+    initializeTTS();
   }, []);
+
+  // TTS初期化
+  const initializeTTS = async () => {
+    try {
+      await TTSService.initialize();
+      const status = await TTSService.getStatus();
+      setTTSEnabled(status.currentSettings.enabled);
+      console.log('PersonalizationDashboard TTS初期化完了:', status);
+    } catch (error) {
+      console.error('PersonalizationDashboard TTS初期化エラー:', error);
+      setTTSEnabled(false);
+    }
+  };
+
+  // TTS音声読み上げ機能
+  const speakResult = async (text: string, priority: 'low' | 'medium' | 'high' | 'urgent' = 'medium') => {
+    if (!ttsEnabled) return;
+    
+    try {
+      await TTSService.speak({
+        text,
+        priority,
+        onStart: () => console.log('個人化ダッシュボード音声読み上げ開始'),
+        onFinish: (finished) => console.log('個人化ダッシュボード音声読み上げ完了:', finished),
+        onError: (error) => console.error('個人化ダッシュボード音声読み上げエラー:', error),
+      });
+    } catch (error) {
+      console.error('PersonalizationDashboard TTS呼び出しエラー:', error);
+    }
+  };
 
   const loadPersonalizationData = async () => {
     setIsLoading(true);
@@ -142,10 +175,21 @@ const PersonalizationDashboard: React.FC<PersonalizationDashboardProps> = ({ onS
       
       setTestResult(result.text);
       console.log('個人化アドバイステスト結果:', result);
+
+      // テスト結果をTTSで読み上げ
+      if (result.success && result.text) {
+        await TTSService.speakTestResult(result.text, true);
+      } else if (result.error) {
+        await TTSService.speakError('個人化アドバイステスト');
+      }
       
     } catch (error) {
       console.error('個人化アドバイステストエラー:', error);
-      setTestResult(`テストエラー: ${error instanceof Error ? error.message : '不明なエラー'}`);
+      const errorMessage = `テストエラー: ${error instanceof Error ? error.message : '不明なエラー'}`;
+      setTestResult(errorMessage);
+      
+      // エラーもTTSで読み上げ
+      await TTSService.speakError('個人化アドバイステスト');
     } finally {
       setIsTesting(false);
     }
@@ -206,10 +250,27 @@ const PersonalizationDashboard: React.FC<PersonalizationDashboardProps> = ({ onS
       }
       
       setDebugResult(debugInfo);
+
+      // デバッグ結果の要約をTTSで読み上げ
+      const hasLocation = debugInfo.includes('✅ 成功');
+      const isEmulator = debugInfo.includes('エミュレータ模擬位置');
+      
+      let summary = '';
+      if (hasLocation) {
+        summary = isEmulator ? 'エミュレータ模擬位置情報を取得しました。' : '実デバイス位置情報を取得しました。';
+      } else {
+        summary = '位置情報の取得に失敗しました。';
+      }
+      
+      await TTSService.speakTestResult(summary, hasLocation);
       
     } catch (error) {
       console.error('デバッグテストエラー:', error);
-      setDebugResult(`❌ デバッグテスト失敗: ${error}`);
+      const errorMessage = `❌ デバッグテスト失敗: ${error}`;
+      setDebugResult(errorMessage);
+      
+      // デバッグエラーもTTSで読み上げ
+      await TTSService.speakError('デバッグテスト');
     } finally {
       setIsTesting(false);
     }
@@ -406,6 +467,15 @@ const PersonalizationDashboard: React.FC<PersonalizationDashboardProps> = ({ onS
 
         <TouchableOpacity style={styles.debugButton} onPress={testLocationAndContext}>
           <Text style={styles.buttonText}>🔍 位置情報・コンテキストデバッグ</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity 
+          style={[styles.ttsButton, ttsEnabled ? styles.ttsEnabledButton : styles.ttsDisabledButton]} 
+          onPress={() => setTTSEnabled(!ttsEnabled)}
+        >
+          <Text style={styles.buttonText}>
+            {ttsEnabled ? '🔊 統合音声ON' : '🔇 統合音声OFF'}
+          </Text>
         </TouchableOpacity>
       </View>
 
@@ -724,6 +794,17 @@ const styles = StyleSheet.create({
     color: '#666',
     marginBottom: 4,
     fontFamily: 'monospace',
+  },
+  ttsButton: {
+    padding: 15,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  ttsEnabledButton: {
+    backgroundColor: '#34C759',
+  },
+  ttsDisabledButton: {
+    backgroundColor: '#8E8E93',
   },
   freeformCard: {
     backgroundColor: 'white',

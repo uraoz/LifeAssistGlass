@@ -18,6 +18,7 @@ import {
 } from 'react-native-vision-camera';
 import ImageAnalysisService from '../services/ImageAnalysisService';
 import ContextService, { EnhancedLifeAssistContext } from '../services/ContextService';
+import TTSService from '../services/TTSService';
 import { AnalysisResult, LifeAssistContext, LocationInfo, WeatherInfo, CalendarInfo } from '../types';
 
 const CameraScreen: React.FC = () => {
@@ -31,17 +32,49 @@ const CameraScreen: React.FC = () => {
   const [enhancedContext, setEnhancedContext] = useState<EnhancedLifeAssistContext | null>(null);
   const [contextQuality, setContextQuality] = useState<any>(null);
   const [loadingStage, setLoadingStage] = useState<string>('');
+  const [ttsEnabled, setTTSEnabled] = useState(true);
 
   const camera = useRef<Camera>(null);
   const device = useCameraDevice('back');
   const { hasPermission, requestPermission } = useCameraPermission();
 
-  // 権限確認
+  // 権限確認とTTS初期化
   useEffect(() => {
     if (!hasPermission) {
       requestPermission();
     }
+    initializeTTS();
   }, [hasPermission, requestPermission]);
+
+  // TTS初期化
+  const initializeTTS = async () => {
+    try {
+      await TTSService.initialize();
+      const status = await TTSService.getStatus();
+      setTTSEnabled(status.currentSettings.enabled);
+      console.log('CameraScreen TTS初期化完了:', status);
+    } catch (error) {
+      console.error('CameraScreen TTS初期化エラー:', error);
+      setTTSEnabled(false);
+    }
+  };
+
+  // TTS音声読み上げ機能
+  const speakResult = async (text: string, priority: 'low' | 'medium' | 'high' | 'urgent' = 'medium') => {
+    if (!ttsEnabled) return;
+    
+    try {
+      await TTSService.speak({
+        text,
+        priority,
+        onStart: () => console.log('カメラ画面音声読み上げ開始'),
+        onFinish: (finished) => console.log('カメラ画面音声読み上げ完了:', finished),
+        onError: (error) => console.error('カメラ画面音声読み上げエラー:', error),
+      });
+    } catch (error) {
+      console.error('CameraScreen TTS呼び出しエラー:', error);
+    }
+  };
 
   // 写真撮影
   const takePhoto = async () => {
@@ -108,6 +141,13 @@ const CameraScreen: React.FC = () => {
 
       console.log('個人化アドバイス生成完了:', result);
 
+      // 解析結果をTTSで読み上げ
+      if (result.success && result.text) {
+        await TTSService.speakTestResult(result.text, true);
+      } else if (result.error) {
+        await TTSService.speakError('画像解析');
+      }
+
     } catch (error) {
       console.error('統合解析エラー:', error);
       Alert.alert('エラー', 'コンテキスト情報の取得に失敗しました');
@@ -118,6 +158,14 @@ const CameraScreen: React.FC = () => {
         const basicContext = await ContextService.collectBasicContext();
         const result = await ImageAnalysisService.analyzeImageWithPhoto(capturedPhoto.path, basicContext);
         setAnalysisResult(result);
+        
+        // フォールバック結果もTTSで読み上げ
+        if (result.success && result.text) {
+          await speakResult(
+            `基本コンテキストで解析完了。${result.text}`,
+            'medium'
+          );
+        }
       } catch (fallbackError) {
         console.error('フォールバック解析エラー:', fallbackError);
         const errorResult = {
@@ -173,6 +221,11 @@ const CameraScreen: React.FC = () => {
 
       console.log('個人化テストアドバイス:', result);
 
+      // テスト結果をTTSで読み上げ
+      if (result.success && result.text) {
+        await TTSService.speakTestResult(result.text, true);
+      }
+
     } catch (error) {
       console.error('統合テストエラー:', error);
       Alert.alert('エラー', 'コンテキスト情報の取得に失敗しました');
@@ -183,6 +236,14 @@ const CameraScreen: React.FC = () => {
         const basicContext = await ContextService.collectBasicContext();
         const result = await ImageAnalysisService.analyzeImage('', basicContext);
         setAnalysisResult(result);
+        
+        // フォールバックテスト結果もTTSで読み上げ
+        if (result.success && result.text) {
+          await speakResult(
+            `基本テストが完了しました。${result.text}`,
+            'medium'
+          );
+        }
       } catch (fallbackError) {
         console.error('フォールバックテストエラー:', fallbackError);
         const errorResult = {
@@ -217,6 +278,12 @@ const CameraScreen: React.FC = () => {
 
     const result = await ImageAnalysisService.analyzeImage('', context);
     setAnalysisResult(result);
+    
+    // 簡易テスト結果もTTSで読み上げ
+    if (result.success && result.text) {
+      await TTSService.speakTestResult(result.text, true);
+    }
+    
     setIsAnalyzing(false);
     setLoadingStage('');
   };
@@ -232,6 +299,14 @@ const CameraScreen: React.FC = () => {
         <TouchableOpacity style={[styles.button, styles.testButton]} onPress={testAPIWithLocation}>
           <Text style={styles.buttonText}>統合APIテスト</Text>
         </TouchableOpacity>
+        <TouchableOpacity 
+          style={[styles.button, ttsEnabled ? styles.ttsEnabledButton : styles.ttsDisabledButton]} 
+          onPress={() => setTTSEnabled(!ttsEnabled)}
+        >
+          <Text style={styles.buttonText}>
+            {ttsEnabled ? '🔊 音声ON' : '🔇 音声OFF'}
+          </Text>
+        </TouchableOpacity>
       </View>
     );
   }
@@ -243,6 +318,14 @@ const CameraScreen: React.FC = () => {
         <Text style={styles.permissionText}>カメラデバイスが見つかりません</Text>
         <TouchableOpacity style={[styles.button, styles.testButton]} onPress={testAPIWithLocation}>
           <Text style={styles.buttonText}>統合APIテスト</Text>
+        </TouchableOpacity>
+        <TouchableOpacity 
+          style={[styles.button, ttsEnabled ? styles.ttsEnabledButton : styles.ttsDisabledButton]} 
+          onPress={() => setTTSEnabled(!ttsEnabled)}
+        >
+          <Text style={styles.buttonText}>
+            {ttsEnabled ? '🔊 音声ON' : '🔇 音声OFF'}
+          </Text>
         </TouchableOpacity>
       </View>
     );
@@ -472,6 +555,12 @@ const styles = StyleSheet.create({
   },
   placeholder: {
     width: 60,
+  },
+  ttsEnabledButton: {
+    backgroundColor: '#34C759',
+  },
+  ttsDisabledButton: {
+    backgroundColor: '#8E8E93',
   },
   previewContainer: {
     flex: 1,

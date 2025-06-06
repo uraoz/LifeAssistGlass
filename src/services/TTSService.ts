@@ -45,12 +45,12 @@ class TTSService {
     urgent: 4,
   };
 
-  // デフォルト設定
+  // デフォルト設定（スピード固定版）
   private getDefaultSettings(): TTSSettings {
     return {
       enabled: true,
       language: 'ja-JP',
-      speechRate: 1.0,
+      speechRate: 1.0, // 常に1.0倍速に固定
       pitch: 1.0,
       volume: 0.8,
       ducking: true,
@@ -107,12 +107,12 @@ class TTSService {
 
   private async initializeTTSEngine(): Promise<void> {
     try {
-      // TTS エンジンの基本設定（利用可能なAPIのみ）
+      // TTS エンジンの基本設定（利用可能なAPIのみ、スピード固定）
       await Tts.setDefaultLanguage(this.getDefaultSettings().language);
-      await Tts.setDefaultRate(this.getDefaultSettings().speechRate);
+      await Tts.setDefaultRate(1.0); // 常に1.0倍速に固定
       await Tts.setDefaultPitch(this.getDefaultSettings().pitch);
       
-      console.log('TTS エンジン初期化完了');
+      console.log('TTS エンジン初期化完了（スピード固定版）');
     } catch (error) {
       console.error('TTS エンジン初期化エラー:', error);
       // 初期化エラーでも継続する（一部機能は利用可能な可能性があるため）
@@ -380,26 +380,24 @@ class TTSService {
       this.settings.volume + config.contextualAdjustments.volumeAdjustment
     ));
 
-    // 速度の調整
-    const adjustedRate = Math.max(0.3, Math.min(2.0, 
-      this.settings.speechRate + config.contextualAdjustments.speedAdjustment
-    ));
+    // 速度は常に1.0に固定（調整機能を無効化）
+    const fixedRate = 1.0;
 
     // 利用可能な設定のみ適用
     try {
-      await Tts.setDefaultRate(adjustedRate);
+      await Tts.setDefaultRate(fixedRate); // 常に1.0倍速
       await Tts.setDefaultPitch(this.settings.pitch);
     } catch (error) {
       console.warn('適応設定の一部適用に失敗:', error);
     }
 
-    // 音量は設定として保持（システム音量やハードウェア制御に依存）
+    // 音量は調整するが、スピードは1.0で固定
     this.settings.volume = adjustedVolume;
-    this.settings.speechRate = adjustedRate;
+    this.settings.speechRate = fixedRate; // 常に1.0
 
-    console.log('適応設定適用:', {
+    console.log('適応設定適用（スピード固定版）:', {
       volume: adjustedVolume, // 注意: システム音量に依存
-      rate: adjustedRate,
+      rate: fixedRate, // 常に1.0倍速
       context: config.adaptiveSettings,
     });
   }
@@ -407,39 +405,40 @@ class TTSService {
   private calculateContextualAdjustments(priority: SpeechPriority): PersonalizedTTSConfig['contextualAdjustments'] {
     const hour = new Date().getHours();
     
-    // 基本調整
+    // 基本調整（スピード調整は無効化）
     let volumeAdjustment = 0;
-    let speedAdjustment = 0;
+    let speedAdjustment = 0; // 常に0（スピード調整無効）
     let priorityThreshold: SpeechPriority = 'low';
 
-    // 時間帯による調整
+    // 時間帯による調整（音量のみ）
     if (hour < 7 || hour > 22) {
       // 早朝・深夜は音量を下げる
       volumeAdjustment -= 0.3;
       priorityThreshold = 'medium';
+      // speedAdjustment += 0.1; // スピード調整を無効化
     } else if (hour >= 9 && hour <= 17) {
-      // 日中は効率重視
-      speedAdjustment += 0.1;
+      // 日中も音量調整のみ（スピード調整は無効）
+      // speedAdjustment += 0.1; // スピード調整を無効化
     }
 
-    // 優先度による調整
+    // 優先度による調整（音量のみ）
     switch (priority) {
       case 'urgent':
         volumeAdjustment += 0.2;
-        speedAdjustment += 0.1;
+        // speedAdjustment += 0.1; // スピード調整を無効化
         break;
       case 'high':
         volumeAdjustment += 0.1;
         break;
       case 'low':
         volumeAdjustment -= 0.1;
-        speedAdjustment -= 0.1;
+        // speedAdjustment -= 0.1; // スピード調整を無効化
         break;
     }
 
     return {
       volumeAdjustment,
-      speedAdjustment,
+      speedAdjustment: 0, // 常に0（スピード調整無効）
       priorityThreshold,
     };
   }
@@ -502,13 +501,15 @@ class TTSService {
   async saveSettings(newSettings: Partial<TTSSettings>): Promise<TTSSettings> {
     await this.initialize();
 
-    const updatedSettings = { ...this.settings, ...newSettings };
+    // スピードは常に1.0に固定
+    const settingsWithFixedRate = { ...newSettings, speechRate: 1.0 };
+    const updatedSettings = { ...this.settings, ...settingsWithFixedRate };
     this.settings = updatedSettings;
 
     await AsyncStorage.setItem(this.STORAGE_KEYS.settings, JSON.stringify(updatedSettings));
     await this.applySettings();
 
-    console.log('TTS設定保存:', updatedSettings);
+    console.log('TTS設定保存（スピード固定版）:', updatedSettings);
     return updatedSettings;
   }
 
@@ -526,17 +527,20 @@ class TTSService {
     if (!this.settings) return;
 
     try {
-      // 利用可能なAPIのみを使用
+      // 利用可能なAPIのみを使用（スピードは常に1.0）
       await Tts.setDefaultLanguage(this.settings.language);
-      await Tts.setDefaultRate(this.settings.speechRate);
+      await Tts.setDefaultRate(1.0); // 常に1.0倍速に固定
       await Tts.setDefaultPitch(this.settings.pitch);
+      
+      // スピード設定を1.0に強制
+      this.settings.speechRate = 1.0;
       
       // 注意: setDefaultVolume と setDefaultVoice は react-native-tts では利用できません
       // 音量は speak() メソッドのオプションで設定するか、システム音量に依存します
       
-      console.log('TTS設定適用完了:', {
+      console.log('TTS設定適用完了（スピード固定版）:', {
         language: this.settings.language,
-        rate: this.settings.speechRate,
+        rate: 1.0, // 常に1.0倍速
         pitch: this.settings.pitch,
         volume: this.settings.volume, // 設定は保持するが、実際の制御は限定的
       });
@@ -692,6 +696,42 @@ class TTSService {
     return this.speak({
       text,
       priority: 'urgent',
+    });
+  }
+
+  // 統合テスト用音声出力メソッド
+  async speakTestResult(result: string, isSuccess: boolean = true): Promise<string> {
+    const prefix = isSuccess ? 'テスト完了。' : 'テストエラー。';
+    const priority = isSuccess ? 'medium' : 'high';
+    
+    return this.speak({
+      text: `${prefix}${result}`,
+      priority: priority as any,
+    });
+  }
+
+  // 統合システム状況通知用メソッド
+  async speakSystemStatus(status: string, context?: string): Promise<string> {
+    const text = context ? `${context}。${status}` : status;
+    
+    return this.speak({
+      text,
+      priority: 'medium',
+    });
+  }
+
+  // 統合エラー通知用メソッド
+  async speakError(errorType: string, suggestion?: string): Promise<string> {
+    let text = `${errorType}でエラーが発生しました。`;
+    if (suggestion) {
+      text += suggestion;
+    } else {
+      text += '詳細は画面をご確認ください。';
+    }
+    
+    return this.speak({
+      text,
+      priority: 'high',
     });
   }
 
